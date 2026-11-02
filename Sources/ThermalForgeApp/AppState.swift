@@ -95,6 +95,7 @@ final class AppState: ObservableObject {
     /// publisher can avoid updates that do not change its whole-degree display.
     private var latestMenuBarTemperature: Float?
     private var publishedMenuBarTemperature: Int?
+    private var wakeObserver: NSObjectProtocol?
     private let executor = PrivilegedExecutor()
     private var heartbeatTimer: DispatchSourceTimer?
     /// Consecutive failed heartbeats, for debouncing `daemonUnreachable`.
@@ -225,6 +226,7 @@ final class AppState: ObservableObject {
     }
 
     deinit {
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         heartbeatTimer?.cancel()
     }
 
@@ -420,6 +422,10 @@ final class AppState: ObservableObject {
         }
         monitor.start()
         self.monitor = monitor
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak monitor] _ in monitor?.invalidateHardwareInventory() }
     }
 
     /// Publish only when the title rendered in the menu bar changes. The detailed

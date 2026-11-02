@@ -76,6 +76,29 @@ struct SMCParamStruct {
 public final class SMCConnection {
 
     private let connection: io_connect_t
+    private var inventory = SMCKeyInventory()
+    private var usesKeyInventory = false
+    private var preparingInventory = false
+    private var inventoryRetryAt: TimeInterval = 0
+
+    /// Opt in only for long-lived callers; one-shot CLI reads avoid enumeration.
+    func enableKeyInventoryCaching() { usesKeyInventory = true }
+
+    /// SMC access is externally serialized (monitor queue / daemon smcLock).
+    func invalidateKeyInventory() {
+        inventory = SMCKeyInventory()
+        inventoryRetryAt = 0
+    }
+
+    private func prepareKeyInventory() {
+        guard !inventory.isComplete, !preparingInventory,
+              ProcessInfo.processInfo.systemUptime >= inventoryRetryAt else { return }
+        preparingInventory = true // getKeyCount() reads #KEY through readKey().
+        defer { preparingInventory = false }
+        if !inventory.rebuild(count: getKeyCount(), keyAtIndex: getKeyAtIndex) {
+            inventoryRetryAt = ProcessInfo.processInfo.systemUptime + 5
+        }
+    }
 
     /// Data size per key, from the first successful readKeyInfo. 0 = the SMC said the
     /// key does not exist. A key's size and existence are fixed by firmware, so each key
@@ -117,6 +140,8 @@ public final class SMCConnection {
 
     /// Read raw bytes from an SMC key
     public func readKey(_ key: String) -> (success: Bool, bytes: [UInt8], size: UInt32) {
+        if usesKeyInventory { prepareKeyInventory() }
+        guard inventory.mayContain(key) else { return (false, [], 0) }
         var input = SMCParamStruct()
         var output = SMCParamStruct()
 
@@ -178,7 +203,7 @@ public final class SMCConnection {
         input.data8 = SMCCommand.getKeyFromIndex.rawValue
         input.data32 = index
 
-        guard callSMC(&input, &output) == kIOReturnSuccess else {
+        guard callSMC(&input, &output) == kIOReturnSuccess, output.result == 0 else {
             return nil
         }
 
