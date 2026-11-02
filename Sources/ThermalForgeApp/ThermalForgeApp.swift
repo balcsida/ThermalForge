@@ -106,6 +106,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Quiesce FIRST: stop the monitor's ticks, reject new submits, and
+        // drain the pump — otherwise an in-flight ramp write can land at the
+        // daemon AFTER the resetAuto below and re-pin the fans in manual
+        // until the daemon watchdog reverts them.
+        MainActor.assumeIsolated {
+            appState.prepareForTermination()
+        }
+
         // Reset fans on quit so the daemon doesn't hold stale APP settings — but
         // ONLY if the app owns the hold. A CLI hold (`sudo thermalforge max`) is the
         // user's deliberate, unsupervised choice; quitting the menu bar app must not

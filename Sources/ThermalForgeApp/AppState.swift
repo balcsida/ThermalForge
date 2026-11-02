@@ -96,6 +96,10 @@ final class AppState: ObservableObject {
     private var latestMenuBarTemperature: Float?
     private var publishedMenuBarTemperature: Int?
     private var wakeObserver: NSObjectProtocol?
+    /// Set by prepareForTermination: once true, no new fan command may enter
+    /// the pump (the exit path is about to drain and reset). Guards the quit
+    /// ordering, not UI state.
+    private var terminating = false
     private let executor = PrivilegedExecutor()
     private var heartbeatTimer: DispatchSourceTimer?
     /// Consecutive failed heartbeats, for debouncing `daemonUnreachable`.
@@ -412,7 +416,10 @@ final class AppState: ObservableObject {
                 // Don't fight a CLI hold — the user set it deliberately. Decide on
                 // the main actor where externalHold lives; the monitor resumes
                 // control when they pick a profile or press Default.
-                guard self.externalHold == nil else { return }
+                // terminating: the quit path is draining the pump — a late
+                // submit would land after the exit resetAuto and re-pin the
+                // fans.
+                guard self.externalHold == nil, !self.terminating else { return }
                 // Hand off to the coalescing pump; the blocking socket write happens
                 // OFF the main thread. During a ramp these fire up to ~10x/sec;
                 // previously each ran a blocking round-trip on the main actor and
@@ -443,6 +450,22 @@ final class AppState: ObservableObject {
         guard force || wholeDegrees != publishedMenuBarTemperature else { return }
         publishedMenuBarTemperature = wholeDegrees
         maxTemp = temperature
+    }
+
+    // MARK: - Termination
+
+    /// Quiesce the fan pipeline for app termination. Order matters: reject new
+    /// submits and stop the monitor's ticks FIRST, then drain the pump — so
+    /// the synchronous resetAuto AppDelegate runs after this returns can never
+    /// be superseded by a late-landing ramp write (an observed quit race: the
+    /// last monitor tick's setRPM reached the daemon AFTER the exit resetAuto
+    /// and re-pinned the fans in manual until the daemon watchdog reverted
+    /// them).
+    func prepareForTermination() {
+        terminating = true
+        monitor?.stop()
+        monitor = nil
+        commandPump.flush()
     }
 
     // MARK: - Actions
