@@ -440,7 +440,8 @@ public final class ThermalMonitor {
     // MARK: - Curve-Based Profiles
 
     private func tickCurve(status: ThermalStatus, peakTemp: Float) {
-        let curve = activeProfile.curve
+        let profile = activeProfile
+        let curve = profile.curve
         let maxRPM = status.fans.first.map { Float($0.maxRPM) } ?? 7826
         let minRPM = status.fans.first.map { Float($0.minRPM) } ?? 2317
 
@@ -460,9 +461,26 @@ public final class ThermalMonitor {
         // can swing the peak across stopTemp on a 100ms scale).
         let offAction = fanOffGate.evaluate(temp: peakTemp, stopTemp: curve.stopTemp)
 
-        // Get target from curve (now applies curve shape: easeIn, linear, easeOut, sCurve)
+        // On/off hysteresis always keys on the same CPU+GPU peak every profile uses —
+        // unchanged whether the profile has a plain curve, a single-axis Custom Curve,
+        // or a dual-sensor one. Only the IN-ZONE shape differs (below). A missing
+        // reading for the curve's chosen sensor falls back to peakTemp — never 0°C
+        // (rq.md §10) — since some category (RAM/SSD/Ambient) may be absent on a
+        // given machine even when CPU/GPU aren't.
+        let customCurve2D = profile.customCurve2D.map { curve in
+            (curve: curve,
+             sensorAValue: curve.sensorA.temperature(in: status) ?? peakTemp,
+             sensorBValue: curve.sensorB.temperature(in: status) ?? peakTemp)
+        }
+
+        // Get target from curve — a dual-sensor Custom Curve's (sensorA, sensorB) →
+        // fan% points when set, else a single-axis Custom Curve's points (both linear
+        // interpolation), else the shape function (easeIn, linear, easeOut, sCurve).
         var rawTarget: Float
-        if let target = curve.targetPercent(at: peakTemp, fansCurrentlyRunning: fansCurrentlyRunning) {
+        if let target = curve.targetPercent(
+            at: peakTemp, fansCurrentlyRunning: fansCurrentlyRunning,
+            customCurve: profile.customCurve, customCurve2D: customCurve2D
+        ) {
             rawTarget = target
         } else if !fansCurrentlyRunning {
             // Curve says fans should be off — and they already are.
