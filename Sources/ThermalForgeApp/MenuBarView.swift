@@ -10,7 +10,6 @@ import ThermalForgeCore
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -239,14 +238,9 @@ struct MenuBarView: View {
         FanProfile.loadAll().filter { $0.customCurve != nil || $0.customCurve2D != nil }
     }
 
-    /// Opens the Custom Profile editor window to `target`. `NSApp.activate` is
-    /// needed because this is an accessory app (`LSUIElement` — no Dock icon): without
-    /// it, `openWindow` can create the window behind the frontmost app instead of
-    /// bringing it forward.
+    /// The editor window is AppKit-owned by the delegate — see `AppDelegate`.
     private func openProfileEditor(_ target: ProfileEditorTarget) {
-        appState.profileEditorTarget = target
-        NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: "profile-editor")
+        (NSApp.delegate as? AppDelegate)?.openProfileEditor(target)
     }
 
     @ViewBuilder

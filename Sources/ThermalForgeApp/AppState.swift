@@ -73,10 +73,6 @@ final class AppState: ObservableObject {
     /// state on launch (so it shows without waiting for a network round-trip); a
     /// dismissed version is suppressed until a newer one ships.
     @Published var availableUpdate: AvailableUpdate?
-    /// What the Custom Profile editor window should open to — a blank new profile, or
-    /// an existing one to edit. Set right before `openWindow(id:)` is called; the
-    /// editor window reads this once (via `.id(...)`) to size its own @State.
-    @Published var profileEditorTarget: ProfileEditorTarget?
 
     /// The menu bar icon's color, from whichever colored curve point the fan's
     /// ACTUAL speed (not its target) has reached — see

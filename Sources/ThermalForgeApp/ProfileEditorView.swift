@@ -44,26 +44,13 @@ private extension Color {
     }
 }
 
-/// Window content: resolves `AppState.profileEditorTarget` to a profile (or a blank
-/// new one) and hosts the actual editor. Kept separate from `ProfileEditorView` so
-/// that view's `@State` is (re)initialized fresh via `.id(target)` whenever the
-/// target changes, instead of stale fields surviving a New → Edit switch.
-struct ProfileEditorWindow: View {
-    @EnvironmentObject var appState: AppState
-
-    var body: some View {
-        let target = appState.profileEditorTarget ?? .new
-        ProfileEditorView(target: target)
-            .id(target.id)
-            .environmentObject(appState)
-    }
-}
-
 struct ProfileEditorView: View {
     @EnvironmentObject var appState: AppState
-    @Environment(\.dismiss) private var dismiss
 
     let target: ProfileEditorTarget
+    /// Closes the AppKit window hosting this view (`@Environment(\.dismiss)` only
+    /// works for SwiftUI-managed presentations).
+    let dismiss: () -> Void
 
     @State private var name: String
     @State private var idText: String
@@ -82,8 +69,9 @@ struct ProfileEditorView: View {
     /// different fan hardware (rather than baking in one Mac's RPM numbers).
     @State private var useRPM = false
 
-    init(target: ProfileEditorTarget) {
+    init(target: ProfileEditorTarget, dismiss: @escaping () -> Void) {
         self.target = target
+        self.dismiss = dismiss
         let existing: FanProfile? = {
             guard case .edit(let id) = target else { return nil }
             return FanProfile.loadAll().first { $0.id == id }
